@@ -13,7 +13,9 @@ app.use(cors());
 // Increase body limit for base64 image uploads (up to ~10MB)
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
-
+app.get("/", (req, res) => {
+  res.send("Fact Verification API is running!");
+});
 app.use("/api", router);
 
 export default app;
