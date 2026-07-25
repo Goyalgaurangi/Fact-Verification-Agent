@@ -1,0 +1,87 @@
+# REPLIT AI AGENT PROMPT — Multi-Agent Fact-Verification System
+
+Copy everything below the line into Replit AI Agent as your first message.
+
+---
+
+## ROLE
+You are building a hackathon MVP: an **Autonomous Multi-Agent Research & Fact-Verification System**. Ship a working, visually polished demo in one pass. No auth. No unnecessary backend complexity. Prioritize something that *runs end-to-end* over something feature-complete.
+
+## TECH STACK (use exactly this, no substitutions)
+- **Frontend:** React + Vite (single-page app) — faster to scaffold on Replit than Next.js, same visual result
+- **Backend:** FastAPI (Python) — one `main.py`, a few route files
+- **LLM:** Google Gemini API (`gemini-1.5-flash` or `gemini-2.0-flash` — pick whichever the SDK exposes) for all 4 agents
+- **Web Search:** Tavily API (free tier, purpose-built for LLM agents, returns clean source metadata — easier than Serper/Brave for this use case)
+- **OCR (for screenshot upload):** Gemini's native vision input (send the uploaded image directly to Gemini with a prompt asking it to extract claims) — do NOT add a separate OCR library, keep it one API
+- **Database:** None. Keep all state in-memory / in React state for the demo. Skip Supabase entirely — not worth the setup time in a 3–4hr build.
+- **Env vars needed:** `GEMINI_API_KEY`, `TAVILY_API_KEY` (use Replit Secrets, prompt me for these keys, don't hardcode)
+
+## THE 3 CORE FEATURES (build these first, in this order — everything else is optional polish)
+
+**1. The 4-Agent Pipeline (this IS the product)**
+A single backend endpoint `POST /api/investigate` that takes a text query OR an uploaded image, and runs this sequential pipeline:
+
+- **Agent 1 — Research Agent:** Takes the query (or extracts claims from the uploaded screenshot via Gemini vision). Calls Tavily to search the web. Extracts 3–6 distinct, checkable claims from the results. Output: list of `{claim_text}`.
+- **Agent 2 — Verification Agent:** For each claim, runs a fresh, targeted Tavily search specifically for that claim. Counts how many independent sources support it, and tags each source with a **Source Reliability Score** using this fixed table:
+  | Source type | Score |
+  |---|---|
+  | Government (.gov, official stats bodies) | 95 |
+  | Research paper / academic (.edu, journals) | 90 |
+  | Major news (Reuters, AP, BBC, major outlets) | 75 |
+  | Blog / unclassified | 40 |
+  Classify source type by domain heuristics (`.gov`→Government, `.edu`/known journal domains→Research, known major outlets list→Major News, everything else→Blog).
+- **Agent 3 — Skeptic Agent:** For each claim + its sources, prompts Gemini to actively challenge it: "Is there enough evidence? Are sources conflicting? Could this be outdated (check publish dates)? Is this a single-source claim?" Output: a short skeptic note per claim, plus a flag `low_verification: true` if only one source supports the claim.
+- **Agent 4 — Report/Final Agent:** Combines everything into a final confidence score per claim using a transparent formula (don't let the LLM just invent a number):
+  ```
+  confidence = min(95,
+    (avg_source_reliability_score * 0.5)
+    + (min(source_count, 4) / 4 * 30)
+    - (20 if low_verification else 0)
+    - (15 if skeptic_flagged_outdated_or_conflicting else 0)
+  )
+  ```
+  Clamp between 5 and 98. Output final verdict label: `✅ Verified` (≥80), `⚠️ Partially Verified` (50–79), `🚨 Low Verification` (<50).
+
+Return the full pipeline trace (all 4 agents' outputs, not just the final answer) as JSON — the frontend needs every agent's intermediate output to render the debate view.
+
+**2. Agent Debate View (this is what makes it memorable — build this UI carefully)**
+Render the pipeline output as a **chat-style transcript**, agent-by-agent, revealed in sequence (use a short staggered animation/delay per bubble, ~600ms apart, so it visibly "thinks" like a real multi-agent system):
+```
+🔬 Research Agent   "Found 4 claims about electric aviation viability..."
+🔎 Verification Agent   "Claim 2: found 3 supporting sources (1 gov, 2 news)"
+🧐 Skeptic Agent   "Claim 2's news sources are from 2022 — may be outdated"
+📋 Final Agent   "Confidence: 82% — ✅ Verified"
+```
+Each agent gets a distinct avatar/icon and a distinct accent color. After the debate finishes, show a clean **final report table**: Claim | Confidence % (with colored progress bar) | Verdict badge | expandable source list with reliability scores.
+
+**3. File Upload for Screenshot Verification**
+A drag-and-drop / click-to-upload zone (accept `.png/.jpg/.jpeg`) alongside the normal text query input. When an image is uploaded, skip straight to Agent 1 using Gemini vision to read and extract claims from the screenshot, then run the same pipeline. Show a thumbnail preview of the uploaded image next to the debate view so judges can see input → output side by side.
+
+## UI / VISUAL DESIGN REQUIREMENTS
+This needs to look like a funded startup's product, not a hackathon prototype:
+- Dark, professional theme: deep navy/charcoal background (`#0B1120` range), not pure black
+- One confident accent color for primary actions (electric blue or violet), plus semantic colors: green (verified), amber (partial), red (low verification) — used consistently for badges, progress bars, and agent bubbles
+- Use a clean sans-serif (Inter or system font stack), generous whitespace, rounded-xl cards, subtle borders instead of heavy shadows
+- Confidence scores render as animated horizontal progress bars, not just numbers
+- Loading states matter: while the pipeline runs, show a live-updating status ("Research Agent searching web...", "Verification Agent cross-checking 4 claims...") — never a blank spinner
+- Fully responsive; this will be demoed on a laptop projected to a screen, so prioritize readability at a distance (larger font sizes, high contrast)
+
+## BUILD ORDER (follow this sequence, test after each step)
+1. Scaffold FastAPI backend with a stub `/api/investigate` endpoint returning hardcoded mock JSON matching the final shape you'll produce — get the frontend working against fake data first.
+2. Scaffold React + Vite frontend: query input + upload zone + debate view + report table, wired to the mock endpoint.
+3. Implement Agent 1 (Research) for real — Gemini + Tavily search, claim extraction.
+4. Implement Agent 2 (Verification) — per-claim Tavily search + source classification.
+5. Implement Agent 3 (Skeptic) — Gemini challenge prompt per claim.
+6. Implement Agent 4 (Final) — deterministic confidence formula above, not LLM-guessed.
+7. Wire image upload → Gemini vision → Agent 1 entry point.
+8. Polish: staggered reveal animation, color system, loading states, mobile check.
+9. Add a "Try an example" button pre-filled with: *"Is electric aviation commercially viable?"* so judges get a guaranteed-good demo run with one click.
+
+## CONSTRAINTS
+- No user auth, no login, no accounts.
+- No database — everything lives in the React session.
+- Keep the whole app to a handful of files: `main.py`, `agents.py`, `search.py`, `App.jsx`, `DebateView.jsx`, `ReportTable.jsx`, `UploadZone.jsx`. Don't over-engineer folder structure.
+- Every claim in the final report MUST show its supporting sources with clickable links — no unsupported confidence numbers.
+- If Tavily or Gemini calls fail, fail gracefully with a visible error state, not a silent crash.
+
+Start by scaffolding the project structure and the mock-data version of the frontend (step 1–2), show me it working, then proceed through the real agent implementations.
