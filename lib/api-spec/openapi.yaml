@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Multi-Agent Fact Verification API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: fact-check
+    description: Fact verification pipeline
 paths:
   /healthz:
     get:
@@ -24,6 +26,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /investigate:
+    post:
+      operationId: investigate
+      tags: [fact-check]
+      summary: Run 4-agent fact verification pipeline
+      description: Accepts a text query or base64-encoded image. Runs Research, Verification, Skeptic, and Final agents sequentially and returns full pipeline trace.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvestigateInput"
+      responses:
+        "200":
+          description: Pipeline result with all agent traces and final verified claims
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvestigateResult"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -34,3 +67,112 @@ components:
       required:
         - status
 
+    InvestigateInput:
+      type: object
+      properties:
+        query:
+          type: ["string", "null"]
+          description: Text query to investigate
+        image_base64:
+          type: ["string", "null"]
+          description: Base64-encoded image for screenshot-based claim extraction
+        image_mime_type:
+          type: ["string", "null"]
+          description: MIME type of the uploaded image (e.g. image/png, image/jpeg)
+
+    SourceItem:
+      type: object
+      required: [url, title, reliability_score, source_type]
+      properties:
+        url:
+          type: string
+        title:
+          type: string
+        reliability_score:
+          type: integer
+          description: 0-100 reliability score based on source type
+        source_type:
+          type: string
+          description: "government | academic | major_news | blog"
+        published_date:
+          type: ["string", "null"]
+
+    VerifiedClaim:
+      type: object
+      required:
+        - id
+        - claim_text
+        - confidence_score
+        - verdict
+        - sources
+        - skeptic_note
+        - low_verification
+        - outdated_or_conflicting
+        - avg_reliability
+        - source_count
+      properties:
+        id:
+          type: integer
+        claim_text:
+          type: string
+        confidence_score:
+          type: number
+          description: Final confidence score 5-98
+        verdict:
+          type: string
+          description: "Verified | Partially Verified | Low Verification"
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceItem"
+        skeptic_note:
+          type: string
+        low_verification:
+          type: boolean
+        outdated_or_conflicting:
+          type: boolean
+        avg_reliability:
+          type: number
+        source_count:
+          type: integer
+
+    AgentStep:
+      type: object
+      required: [agent, agent_id, message, timestamp]
+      properties:
+        agent:
+          type: string
+          description: Human-readable agent name
+        agent_id:
+          type: string
+          description: "research | verification | skeptic | final"
+        message:
+          type: string
+        timestamp:
+          type: string
+
+    InvestigateResult:
+      type: object
+      required: [query, claims, agent_trace]
+      properties:
+        query:
+          type: string
+          description: The resolved text query (extracted from image if applicable)
+        image_thumbnail:
+          type: ["string", "null"]
+          description: Base64 thumbnail of uploaded image for display
+        claims:
+          type: array
+          items:
+            $ref: "#/components/schemas/VerifiedClaim"
+        agent_trace:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentStep"
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

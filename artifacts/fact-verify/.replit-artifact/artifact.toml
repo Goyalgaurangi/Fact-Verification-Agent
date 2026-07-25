@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "Fact Verification System"
+version = "1.0.0"
+id = "artifacts/fact-verify"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25676
+
+[services.development]
+run = "pnpm --filter @workspace/fact-verify run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/fact-verify", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/fact-verify/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25676"
+BASE_PATH = "/"
