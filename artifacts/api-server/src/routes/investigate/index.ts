@@ -28,9 +28,37 @@ router.post("/investigate", async (req, res): Promise<void> => {
 
     res.json(result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Pipeline failed";
     req.log.error({ err }, "Pipeline error");
-    res.status(500).json({ error: message });
+
+    // Surface quota / rate-limit errors clearly so users know what to fix
+    const raw = err instanceof Error ? err.message : String(err);
+    const isQuota =
+      raw.includes("429") ||
+      raw.includes("RESOURCE_EXHAUSTED") ||
+      raw.includes("quota") ||
+      raw.includes("rate limit");
+
+    if (isQuota) {
+      res.status(429).json({
+        error:
+          "Your Gemini API key has exceeded its free-tier quota. " +
+          "Please enable billing at https://ai.google.dev or wait for your quota to reset (usually 24 hours). " +
+          "Free-tier keys allow very few requests per day.",
+      });
+      return;
+    }
+
+    const isTavily =
+      raw.includes("TAVILY_API_KEY") || raw.includes("Tavily API error");
+    if (isTavily) {
+      res.status(502).json({
+        error:
+          "Tavily search API error. Please verify your TAVILY_API_KEY is valid and has remaining credits.",
+      });
+      return;
+    }
+
+    res.status(500).json({ error: raw || "Pipeline failed unexpectedly." });
   }
 });
 
