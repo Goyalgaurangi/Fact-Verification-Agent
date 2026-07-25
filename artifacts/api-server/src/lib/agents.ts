@@ -3,11 +3,11 @@
  *
  * Agent 1 — Research Agent:   extracts 3-6 checkable claims (from query or image)
  * Agent 2 — Verification Agent: per-claim Tavily search + source reliability scoring
- * Agent 3 — Skeptic Agent:    challenges evidence via Gemini
+ * Agent 3 — Skeptic Agent:    challenges evidence via Groq LLM
  * Agent 4 — Final Agent:      deterministic confidence formula + verdict
  */
 
-import { GoogleGenAI } from "@google/genai";
+import Groq from "groq-sdk";
 import { tavilySearch, type TavilyResult } from "./search.js";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -50,23 +50,25 @@ export interface PipelineResult {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Gemini client
+// Groq client
 // ────────────────────────────────────────────────────────────────────────────
 
-function getGeminiClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY environment variable is not set");
-  return new GoogleGenAI({ apiKey });
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+
+function getGroqClient(): Groq {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error("GROQ_API_KEY environment variable is not set");
+  return new Groq({ apiKey });
 }
 
-async function geminiText(prompt: string): Promise<string> {
-  const ai = getGeminiClient();
-  const response = await ai.models.generateContent({
-    model: "gemini-1.5-flash",
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: { maxOutputTokens: 8192 },
+async function groqText(prompt: string): Promise<string> {
+  const groq = getGroqClient();
+  const completion = await groq.chat.completions.create({
+    model: GROQ_MODEL,
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 8192,
   });
-  return response.text ?? "";
+  return completion.choices[0]?.message?.content ?? "";
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -253,7 +255,7 @@ Return ONLY a JSON array of strings, each being a complete, self-contained claim
 Example: ["Electric planes currently have a maximum range of 200 miles on a single charge.", "Over 150 electric aircraft designs are in development worldwide."]
 `;
 
-  const raw = await geminiText(prompt);
+  const raw = await groqText(prompt);
   const claims = parseClaimsJson(raw);
 
   trace.push({
@@ -404,7 +406,7 @@ No markdown, no explanation, just the JSON object.
     };
 
     try {
-      const raw = await geminiText(prompt);
+      const raw = await groqText(prompt);
       const match = raw.match(/\{[\s\S]*\}/);
       if (match) {
         const parsed = JSON.parse(match[0]) as Partial<SkepticResult>;
